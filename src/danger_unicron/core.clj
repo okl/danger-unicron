@@ -1,4 +1,4 @@
-(ns danger-unicron.core
+(ns unicron.core
   "Watch for new files, take action when they appear"
   {:author "Matt Halverson"
    :date "Fri Aug 22 09:54:28 PDT 2014"}

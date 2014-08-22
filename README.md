@@ -1,4 +1,4 @@
-# danger-unicron
+# unicron
 
 A Clojure library designed to watch for new files.
 

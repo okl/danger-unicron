@@ -1,6 +1,6 @@
-(ns danger-unicron.core-test
+(ns unicron.core-test
   (:require [clojure.test :refer :all]
-            [danger-unicron.core :refer :all]))
+            [unicron.core :refer :all]))
 
 (deftest a-test
   (testing "FIXME, I fail."
