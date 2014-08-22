@@ -8,6 +8,7 @@
                  [com.onekingslane.danger/clojure-common-utils "0.0.24"]
                  [com.onekingslane.danger/diesel "1.0.3"]
                  [clj-time "0.7.0"]
+                 [im.chit/cronj "1.0.1"]
                  ;; [compojure "1.1.6"]
                  ;; [ring "1.3.0"]
                  ]
