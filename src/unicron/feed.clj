@@ -7,7 +7,8 @@
             [roxxi.utils.common :refer [def-]])
   (:require [diesel.core :refer [definterpreter]])
   (:require [clojure.java.shell :refer [sh]]
-            [clj-time.core :as t]))
+            [clj-time.core :as t]
+            [cronj.data.tab :as tab]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; # Helpers
@@ -27,8 +28,7 @@
 
 (def- period-exprs
   ;; date functions pass out to clj-time library
-  {'months t/months
-   'weeks t/weeks
+  {'weeks t/weeks
    'days t/days
    'hours t/hours
    'minutes t/minutes})
@@ -134,19 +134,18 @@
   (let [period-maker (get period-exprs period)]
     (period-maker number)))
 
+(defn- valid-cron? [cron-str]
+  (tab/valid-tab? cron-str))
 (defmethod interp-feed :cron [[token cron-str]]
-  ;; XXX
-  ;; Validate that:
-  ;;  - it's a valid cron
+  (when-not (valid-cron? cron-str)
+    (log-and-throw (format "Invalid cron-str: %s" cron-str)))
   (list cron-str))
 
 (defmethod interp-feed :crons [[token & cron-strs]]
-  ;; XXX
-  ;; Validate that:
-  ;;  - they're all valid crons
-  ;;  - at least a single cron has been specified
   (when (empty? cron-strs)
     (log-and-throw "No crons specified in the \"crons\" block!"))
+  (when-let [bad-crons (filter (comp not valid-cron?) cron-strs)]
+    (log-and-throw (format "Invalid cron-strs: %s" bad-crons)))
   cron-strs)
 
 (defmethod interp-feed :filter [[token filter-expr]]
