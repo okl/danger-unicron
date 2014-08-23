@@ -8,15 +8,8 @@
   (:require [diesel.core :refer [definterpreter]])
   (:require [clojure.java.shell :refer [sh]]
             [clj-time.core :as t]
-            [cronj.data.tab :as tab]))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; # Helpers
-
-(defmacro log-and-throw [msg]
-  `(do
-     (log/error ~msg)
-     (throw (RuntimeException. ~msg))))
+            [cronj.data.tab :as tab])
+  (:require [unicron.utils :refer [log-and-throw]]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; # Defaults

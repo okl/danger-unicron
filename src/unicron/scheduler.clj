@@ -5,27 +5,27 @@
   (:require [clojure.tools.logging :as log])
   (:require [roxxi.utils.print :refer [print-expr]]
             [roxxi.utils.common :refer [def-]])
-  (:require [cronj.core :refer :all]))
-
-;; # Playing around
-
-(defn print-handler [t opts]
-  (println (:output opts) ": " t))
-;; (def print-task
-;;   {:id "print-task"
-;;    :handler print-handler
-;;    :schedule "/2 * * * * * *"
-;;    :opts {:output "Hello There"}})
-;; (def cj (cronj :entries [print-task]))
-;; (start! cj)
-;; (stop! cj)
+  (:require [clj-time.core :as t]
+            [cronj.core :refer :as cj])
+  (:require [unicron.utils :refer [log-and-throw]]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; # Locks
+;; # Single crons (EASY!)
 
-(defn make-lock [] (ref nil))
+(defn- make-cron-entry [id handler cron opts]
+  {:id id
+   :handler handler
+   :schedule cron
+   :opts opts})
 
-(defn ask-for-lock
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; # Multi-crons (aka unions of crons)
+
+;; ## Locks
+
+(defn- make-lock [] (ref nil))
+
+(defn- ask-for-lock
   "Return value indicates whether you got the lock or not"
   [lk id]
   (dosync
@@ -35,81 +35,94 @@
        true)
      false)))
 
-(defn owns-lock [lk id]
+(defn- owns-lock [lk id]
   (= @lk id))
 
-(defn release-lock [lk id]
+(defn- release-lock [lk id]
   (when (not (owns-lock lk id))
     (throw (RuntimeException. "You didn't own the lock!")))
   (dosync
    (ref-set lk nil)))
 
-;; # More playing
+;; ## Actual cron unions
 
-;; (def lock (make-lock))
-;; (def cj-2 (cronj :entries [{:id "multi-cron-task-1"
-;;                             :handler (fn [t opts]
-;;                                        (let [me "multi-cron-task-1"]
-;;                                          (cond (owns-lock lock me)
-;;                                                (println "Still held lock from last time; no-op")
-;;                                                (ask-for-lock lock me)
-;;                                                (do
-;;                                                  (println (format "Id %s got lock!" me))
-;;                                                  (print-handler t opts)
-;;                                                  (release-lock lock me))
-;;                                                :else
-;;                                                (println (format "Id %s failed to get lock" me)))))
-;;                             :schedule "/2 * * * * * *"
-;;                             :opts {:output "Hello There"}}
-;;                            {:id "multi-cron-task-2"
-;;                             :handler (fn [t opts]
-;;                                        (let [me "multi-cron-task-2"]
-;;                                          (cond (owns-lock lock me)
-;;                                                (println "Still held lock from last time; no-op")
-;;                                                (ask-for-lock lock me)
-;;                                                (do
-;;                                                  (println (format "Id %s got lock!" me))
-;;                                                  (print-handler t opts)
-;;                                                  (release-lock lock me))
-;;                                                :else
-;;                                                (println (format "Id %s failed to get lock" me)))))
-;;                             :schedule "/3 * * * * * *"
-;;                             :opts {:output "Hello There"}}]))
-;; (start! cj-2)
-;; (stop! cj-2)
-
-;; # Cron-unions!
-
-(defn multi-cron-handler [lock numbered-id handler]
+(defn- make-multi-cron-handler [lock numbered-id handler]
   (fn [t opts]
     (cond (owns-lock lock numbered-id)
-          (println "Still held lock from last time; no-op")
+          (log/debugf "Id %s still held lock from last time; no-op" numbered-id)
           (ask-for-lock lock numbered-id)
           (do
-            (println (format "Id %s got lock!" numbered-id))
+            (log/debug "Id %s got lock!" numbered-id)
             (handler t opts)
             (release-lock lock numbered-id))
           :else
-          (println (format "Id %s failed to get lock" numbered-id)))))
+          (log/debugf "Id %s failed to get lock" numbered-id))))
 
-(defn multi-cron-entries [id handler crons opts]
+(defn- make-crons-entries [id handler crons opts]
   (let [indices (range (count crons))
         lock (make-lock)]
     (vec
      (map (fn [i cron]
             (let [this-id (str id "-" i)]
               {:id this-id
-               :handler (multi-cron-handler lock this-id handler)
+               :handler (make-multi-cron-handler lock this-id handler)
                :schedule cron
                :opts opts}))
           indices
           crons))))
 
-(def cj-3 (cronj :entries
-                 (multi-cron-entries "multi-cron-task"
-                                     print-handler
-                                     ["/2 * * * * * *"
-                                      "/3 * * * * * *"]
-                                     {:output "Hello There"})))
-(start! cj-3)
-(stop! cj-3)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; # Periods
+
+(defn- ->cron [p]
+  (cond
+   (t/minutes? p) (format "0 /%s * * * * *" (.getMinutes p))
+   (t/hours? p)   (format "0 * /%s * * * *" (.getHours p))
+   (t/days? p)    (format "0 * * /%s * * *" (.getDays p))
+   (t/weeks? p)
+   (let [w (.getWeeks p)
+         d (* 7 w)]
+     (when (> d 28)
+       (log-and-throw
+        (format "Can't cron a weeks-period of longer than 4 weeks... you put %s"
+                w)))
+     (format "0 * * /%s * * *" d))))
+
+(defn- make-periodic-entry [id handler period opts]
+  {:id id
+   :handler handler
+   :schedule (->cron period)
+   :opts opts})
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; # Master cron!
+
+(defn- cronned?  [poll-expr] (list? poll-expr))
+(defn- periodic? [poll-expr] (instance? org.joda.time.ReadablePeriod poll-expr))
+
+(defn- ->cron-entry [feed]
+  (let [{date-expr :date-expr
+         action :action
+         poll-expr :poll-expr
+         filters :filters}
+        feed]
+    (cond
+     (and (cronned? poll-expr)
+          (> (count poll-expr) 1))
+     (make-crons-entries "id" "handler" poll-expr "opts")
+     (and (cronned? poll-expr)
+          (= (count poll-expr) 1))
+     (make-cron-entry "id" "handler" poll-expr "opts")
+     (periodic? poll-expr)
+     (make-periodic-entry "id" "handler" poll-expr "opts")
+     :else
+     (log-and-throw
+      (format "Don't know how to convert poll-expr %s to a cron-entry"
+              poll-expr)))))
+
+(defn make-master-cronj [parsed-feeds]
+  (let [entries (flatten (map ->cron-entry parsed-feeds))]
+    (cronj :entries entries)))
+
+(defn start! [cronj] (cj/start! cronj))
+(defn stop!  [cronj] (cj/stop!  cronj))
