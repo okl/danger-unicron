@@ -5,18 +5,83 @@
   (:require [clojure.tools.logging :as log])
   (:require [roxxi.utils.print :refer [print-expr]]
             [roxxi.utils.common :refer [def-]])
-  (:require [clj-time.core :as t]
-            [cronj.core :refer :as cj])
-  (:require [unicron.utils :refer [log-and-throw]]))
+  (:require [clj-time.core :as time])
+  (:require [clojurewerkz.quartzite.scheduler :as qs]
+            [clojurewerkz.quartzite.schedule.calendar-interval :as ci]
+            [clojurewerkz.quartzite.schedule.cron :as cron]
+            [clojurewerkz.quartzite.triggers :as t]
+            [clojurewerkz.quartzite.jobs :as j]
+            [clojurewerkz.quartzite.matchers :as m])
+  (:require [unicron.utils :refer [log-and-throw]])
+  (:import [org.quartz CalendarIntervalScheduleBuilder]))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; # Debugging
+
+(defn list-all-jobs []
+  (let [groups (qs/get-job-group-names)
+        keys (mapcat #(qs/get-job-keys (m/group-equals %)) groups)]
+    keys))
+
+(defn list-all-triggers []
+  (let [groups (qs/get-trigger-group-names)
+        keys (mapcat #(qs/get-trigger-keys (m/group-equals %)) groups)]
+    keys))
+
+(defn get-triggers-of-job [job-name]
+  (qs/get-triggers-of-job job-name))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; # Helpers
+
+(def- fn-param "job.clojure.fn")
+(defn- invoke-fn-from-context [context]
+  (let [f (-> context
+              .getJobDetail
+              .getJobDataMap
+              (.get fn-param))]
+    (f context)))
+
+(deftype JobThatLooksUpItsFunction []
+  org.quartz.Job
+  (execute [this context] (invoke-fn-from-context context)))
+
+(defn- build-job [job-key handler]
+  (j/build
+   (j/of-type JobThatLooksUpItsFunction)
+   (j/with-identity job-key)
+   (j/using-job-data {fn-param handler})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; # Single crons (EASY!)
 
+(defn- make-cron-trigger [trigger-key cron]
+  (t/build
+   (t/with-identity trigger-key)
+   (t/start-now)
+   (t/with-schedule
+     (cron/schedule
+      (cron/cron-schedule cron)
+      ;;(cron/in-time-zone (java.util.TimeZone/getTimeZone "Europe/Moscow"))
+      (cron/with-misfire-handling-instruction-fire-and-proceed)))))
+
 (defn- make-cron-entry [id handler cron opts]
-  {:id id
-   :handler handler
-   :schedule cron
-   :opts opts})
+  (let [t-key (t/key id)
+        t (make-cron-trigger t-key cron)
+        j-key (j/key id)
+        j (build-job j-key handler)]
+    {:trigger-key t-key
+     :trigger t
+     :job-key j-key
+     :job j}))
+
+;; (def r (make-cron-entry "cron1"
+;;                         #(do
+;;                              (print "Map is ")
+;;                              (clojure.pprint/pprint %))
+;;                         "/5 * * * * ? *"
+;;                         {:output "bar"}))
+;; (schedule-jobs [r])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; # Multi-crons (aka unions of crons)
@@ -46,61 +111,92 @@
 
 ;; ## Actual cron unions
 
-(defn- make-multi-cron-handler [lock numbered-id handler]
-  (fn [t opts]
+(defn- wrap-locking [lock numbered-id handler]
+  (fn not-anonymous [ctx]
     (cond (owns-lock lock numbered-id)
-          (log/debugf "Id %s still held lock from last time; no-op" numbered-id)
+          (log/infof "Id %s still held lock from last time; no-op" numbered-id)
           (ask-for-lock lock numbered-id)
-          (do
-            (log/debug "Id %s got lock!" numbered-id)
-            (handler t opts)
-            (release-lock lock numbered-id))
+          (try
+            (do
+              (log/infof "Id %s got lock!" numbered-id)
+              (handler ctx))
+            (catch Exception e (str "caught exception: " (.getMessage e)))
+            (finally (release-lock lock numbered-id)))
           :else
-          (log/debugf "Id %s failed to get lock" numbered-id))))
+          (log/infof "Id %s failed to get lock; no-op" numbered-id))))
 
-(defn- make-crons-entries [id handler crons opts]
+(defn- make-crons-entries [base-id handler crons opts]
   (let [indices (range (count crons))
         lock (make-lock)]
     (vec
      (map (fn [i cron]
-            (let [this-id (str id "-" i)]
-              {:id this-id
-               :handler (make-multi-cron-handler lock this-id handler)
-               :schedule cron
-               :opts opts}))
+            (let [this-id (str base-id "-" i)]
+              (make-cron-entry this-id
+                               (wrap-locking lock this-id handler)
+                               cron
+                               opts)))
           indices
           crons))))
+
+;; (def c (make-crons-entries "crons"
+;;                            #(do
+;;                               (Thread/sleep 300)
+;;                               (println (format "I am crons and arg is %s" %)))
+;;                            ["/2 * * * * ? *"
+;;                             "/3 * * * * ? *"]
+;;                            {}))
+;; (schedule-jobs c)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; # Periods
 
-(defn- ->cron [p]
-  (cond
-   (t/minutes? p) (format "0 /%s * * * * *" (.getMinutes p))
-   (t/hours? p)   (format "0 * /%s * * * *" (.getHours p))
-   (t/days? p)    (format "0 * * /%s * * *" (.getDays p))
-   (t/weeks? p)
-   (let [w (.getWeeks p)
-         d (* 7 w)]
-     (when (> d 28)
-       (log-and-throw
-        (format "Can't cron a weeks-period of longer than 4 weeks... you put %s"
-                w)))
-     (format "0 * * /%s * * *" d))))
+(defn ->interval [p]
+  (let [cisb (CalendarIntervalScheduleBuilder/calendarIntervalSchedule)]
+    (cond
+     (time/seconds? p) (ci/with-interval-in-seconds cisb (.getSeconds p))
+     (time/minutes? p) (ci/with-interval-in-minutes cisb (.getMinutes p))
+     (time/hours? p)   (ci/with-interval-in-hours   cisb (.getHours p))
+     (time/days? p)    (ci/with-interval-in-days    cisb (.getDays p))
+     (time/weeks? p)   (ci/with-interval-in-weeks   cisb (.getWeeks p))
+     :else (log-and-throw
+            (format "Unrecognized period type: p was %s, type was %s"
+                    p
+                    (class p))))))
 
-(defn- make-periodic-entry [id handler period opts]
-  {:id id
-   :handler handler
-   :schedule (->cron period)
-   :opts opts})
+(defn- make-periodic-trigger [trigger-key period]
+  (t/build
+   (t/with-identity trigger-key)
+   (t/start-now)
+   (t/with-schedule
+     (ci/with-misfire-handling-instruction-fire-and-proceed
+       (->interval period)))))
+
+(defn- make-periodic-entry
+  [id handler period opts]
+  (let [t-key (t/key id)
+        t (make-periodic-trigger t-key period)
+        j-key (j/key id)
+        j (build-job j-key handler)]
+    {:trigger-key t-key
+     :trigger t
+     :job-key j-key
+     :job j}))
+
+;; (def p (make-periodic-entry "period1"
+;;                             #(do
+;;                                  (print "I am periodic and map is ")
+;;                                  (print %))
+;;                             (time/seconds 2)
+;;                             {:output "bar"}))
+;; (schedule-jobs [p])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; # Master cron!
+;; # feeds -> jobs + triggers
 
 (defn- cronned?  [poll-expr] (list? poll-expr))
 (defn- periodic? [poll-expr] (instance? org.joda.time.ReadablePeriod poll-expr))
 
-(defn- ->cron-entry [feed]
+(defn- quartzify [feed]
   (let [{date-expr :date-expr
          action :action
          poll-expr :poll-expr
@@ -120,9 +216,34 @@
       (format "Don't know how to convert poll-expr %s to a cron-entry"
               poll-expr)))))
 
-(defn make-master-cronj [parsed-feeds]
-  (let [entries (flatten (map ->cron-entry parsed-feeds))]
-    (cronj :entries entries)))
+(defn schedule-jobs [jobs]
+  (doseq [j jobs]
+    (when-let [pre-existing (qs/get-job (:job-key j))]
+      (log/infof "Found existing job named %s; unscheduling the old one"
+                 (:job-key j))
+      (qs/delete-job (:job-key j)))
+    (when-let [pre-existing (qs/get-trigger (:trigger-key j))]
+      (log/infof "Found existing trigger named %s; unscheduling the old one"
+                 (:trigger-key j))
+      (qs/delete-trigger (:trigger-key j)))
+    (qs/schedule (:job j) (:trigger j))))
 
-(defn start! [cronj] (cj/start! cronj))
-(defn stop!  [cronj] (cj/stop!  cronj))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; # Manage scheduler state
+
+(defn init-scheduler! "Call this before doing anything with the scheduler" []
+  (qs/initialize))
+
+(defn start-scheduler! []
+  (qs/start))
+
+(defn pause-scheduler! []
+  ;;(qs/pause-all!)
+  (qs/standby))
+
+(defn shutdown-scheduler! "Must do this in order for app to shutdown" []
+  (qs/shutdown))
+
+(defn blast-and-load-feeds! [parsed-feeds]
+  (qs/clear!)
+  (schedule-jobs (flatten (map quartzify parsed-feeds))))
