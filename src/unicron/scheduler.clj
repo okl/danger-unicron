@@ -58,10 +58,11 @@
 (defn- make-cron-trigger [trigger-key cron]
   (t/build
    (t/with-identity trigger-key)
-   (t/start-now)
+   ;; (t/start-now) ;; don't start on scheduler start-up! Run when specified.
    (t/with-schedule
      (cron/schedule
       (cron/cron-schedule cron)
+      ;; XXX time zone considerations?
       ;;(cron/in-time-zone (java.util.TimeZone/getTimeZone "Europe/Moscow"))
       (cron/with-misfire-handling-instruction-fire-and-proceed)))))
 
@@ -112,7 +113,7 @@
 ;; ## Actual cron unions
 
 (defn- wrap-locking [lock numbered-id handler]
-  (fn not-anonymous [ctx]
+  (fn [ctx]
     (cond (owns-lock lock numbered-id)
           (log/infof "Id %s still held lock from last time; no-op" numbered-id)
           (ask-for-lock lock numbered-id)
@@ -120,7 +121,8 @@
             (do
               (log/infof "Id %s got lock!" numbered-id)
               (handler ctx))
-            (catch Exception e (str "caught exception: " (.getMessage e)))
+            (catch Exception e
+              (log/errorf "Caught exception: %s" (.getMessage e)))
             (finally (release-lock lock numbered-id)))
           :else
           (log/infof "Id %s failed to get lock; no-op" numbered-id))))
@@ -166,6 +168,8 @@
 (defn- make-periodic-trigger [trigger-key period]
   (t/build
    (t/with-identity trigger-key)
+   ;; Intervals do start at scheduler start-up (unlike crons,
+   ;; which run as scheduled.)
    (t/start-now)
    (t/with-schedule
      (ci/with-misfire-handling-instruction-fire-and-proceed
@@ -196,8 +200,9 @@
 (defn- cronned?  [poll-expr] (list? poll-expr))
 (defn- periodic? [poll-expr] (instance? org.joda.time.ReadablePeriod poll-expr))
 
-(defn- quartzify [feed]
-  (let [{date-expr :date-expr
+(defn ->job [feed]
+  (let [{id :id
+         date-expr :date-expr
          action :action
          poll-expr :poll-expr
          filters :filters}
@@ -205,12 +210,12 @@
     (cond
      (and (cronned? poll-expr)
           (> (count poll-expr) 1))
-     (make-crons-entries "id" "handler" poll-expr "opts")
+     (make-crons-entries id action poll-expr "opts")
      (and (cronned? poll-expr)
           (= (count poll-expr) 1))
-     (make-cron-entry "id" "handler" poll-expr "opts")
+     (make-cron-entry id action (first poll-expr) "opts")
      (periodic? poll-expr)
-     (make-periodic-entry "id" "handler" poll-expr "opts")
+     (make-periodic-entry id action poll-expr "opts")
      :else
      (log-and-throw
       (format "Don't know how to convert poll-expr %s to a cron-entry"
@@ -238,12 +243,18 @@
   (qs/start))
 
 (defn pause-scheduler! []
-  ;;(qs/pause-all!)
+  ;; What is the difference between this and (qs/pause-all!)? Not sure,
+  ;; but I *think* coming out of standby will retrigger any "missed" jobs
+  ;; whereas jobs that are unpaused won't retrigger (instead will wait
+  ;; until their next scheduled trigger-hit).
   (qs/standby))
+
+(defn clear-scheduler! []
+  (qs/clear!))
 
 (defn shutdown-scheduler! "Must do this in order for app to shutdown" []
   (qs/shutdown))
 
-(defn blast-and-load-feeds! [parsed-feeds]
-  (qs/clear!)
-  (schedule-jobs (flatten (map quartzify parsed-feeds))))
+(defn blast-and-load-feeds! "A parsed-feed is a map" [parsed-feeds]
+  (clear-scheduler!)
+  (schedule-jobs (flatten (map ->job parsed-feeds))))
