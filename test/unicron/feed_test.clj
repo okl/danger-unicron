@@ -47,15 +47,15 @@
 (deftest action-test
   (let [ok? fn?]
     (testing "actions can be parsed"
-      (is (ok? (interp '(action (sh "echo 'Great success'")))))
-      (is (ok? (interp '(action (sh "echo 'Great success'")))))
-      (is (ok? (interp '(action (sh "echo 'Great success' > /dev/null")))))
+      (is (ok? (interp '(action (sh "echo 'Great success in sh'")))))
+      (is (ok? (interp '(action (sh "echo 'Great success in sh'")))))
+      (is (ok? (interp '(action (sh "echo 'Great success in sh' > /dev/null")))))
       (is (ok? (interp '(action (sh "ps -ef | grep grep")))))
       ;; XX when root-sh is implemented, uncomment this
       ;; (is (ok? (interp '(action (root-sh "echo 'Great success'")))))
-      (is (ok? (interp '(action (clj (constantly (println "Great success")))))))
-      (is (ok? (interp '(action (clj "(constantly (println \"Great success\"))")))))
-      (is (ok? (interp (list 'action (list 'clj (constantly (println "Great success")))))))
+      (is (ok? (interp '(action (clj (fn [& _] (println "Great success in clj")))))))
+      (is (ok? (interp '(action (clj "(fn [& _] (println \"Great success in clj\"))")))))
+      (is (ok? (interp (list 'action (list 'clj (fn [& _] (println "Great success in clj")))))))
       (is (thrown? Exception (interp (list 'action (list 'clj 1))))))))
 
 (deftest is-dir-test
