@@ -58,7 +58,7 @@
 (defn- make-cron-trigger [trigger-key cron]
   (t/build
    (t/with-identity trigger-key)
-   ;; (t/start-now) ;; don't start on scheduler start-up! Run when specified.
+   ;; (t/start-now) ;; don't start on scheduler start-up! Run only when specified.
    (t/with-schedule
      (cron/schedule
       (cron/cron-schedule cron)
@@ -75,14 +75,6 @@
      :trigger t
      :job-key j-key
      :job j}))
-
-;; (def r (make-cron-entry "cron1"
-;;                         #(do
-;;                              (print "Map is ")
-;;                              (clojure.pprint/pprint %))
-;;                         "/5 * * * * ? *"
-;;                         {:output "bar"}))
-;; (schedule-jobs [r])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; # Multi-crons (aka unions of crons)
@@ -140,15 +132,6 @@
           indices
           crons))))
 
-;; (def c (make-crons-entries "crons"
-;;                            #(do
-;;                               (Thread/sleep 300)
-;;                               (println (format "I am crons and arg is %s" %)))
-;;                            ["/2 * * * * ? *"
-;;                             "/3 * * * * ? *"]
-;;                            {}))
-;; (schedule-jobs c)
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; # Periods
 
@@ -186,14 +169,6 @@
      :job-key j-key
      :job j}))
 
-;; (def p (make-periodic-entry "period1"
-;;                             #(do
-;;                                  (print "I am periodic and map is ")
-;;                                  (print %))
-;;                             (time/seconds 2)
-;;                             {:output "bar"}))
-;; (schedule-jobs [p])
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; # feeds -> jobs + triggers
 
@@ -202,10 +177,8 @@
 
 (defn ->job [feed]
   (let [{id :id
-         date-expr :date-expr
          action :action
-         poll-expr :poll-expr
-         filters :filters}
+         poll-expr :poll-expr}
         feed]
     (cond
      (and (cronned? poll-expr)
