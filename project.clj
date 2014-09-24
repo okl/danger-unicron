@@ -20,4 +20,6 @@
   ;;:plugins [[lein-ring "0.8.11"]]
   ;;:ring {:handler unicron/handler}
   :resource-paths ["resources"]
-)
+  ;; disable logging when running tests
+  :profiles {:test {:resource-paths ["test/resources"]}}
+  )
