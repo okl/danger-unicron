@@ -111,7 +111,7 @@
   seoconds since the epoch"
   [ttl]
   (cond
-   (number? ttl)
+   (integer? ttl)
    (- (now) ttl)
    (isa? (class ttl) ReadablePeriod)
    (de/->seconds-since-epoch
