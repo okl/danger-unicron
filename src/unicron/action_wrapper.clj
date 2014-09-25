@@ -30,7 +30,7 @@
     (map (fn [path] {:uri path, :ts (de/parse-expr d (subs path 0 len))})
          (:paths file-listing))))
 
-(defn- list-files-matching-prefix [date-expr tz prefix conn-info]
+(defn list-files-matching-prefix [date-expr tz prefix conn-info]
   (log/infof "Prefix is %s" prefix)
   (let [form `(with-s3
                 ~conn-info
@@ -38,7 +38,7 @@
         check-result (dwd/exec-interp-namespaced form {})]
     (get-path*ts-pairs check-result date-expr tz)))
 
-(defn- list-files-newer-than [date-expr tz newer-than-this conn-info]
+(defn list-files-newer-than [date-expr tz newer-than-this conn-info]
   (let [form `(with-s3
                 ~conn-info
                 (list-files-newer-than ~date-expr
@@ -56,13 +56,12 @@
     (filter #(not (contains? already-seen-uris (:uri %))) all-matches-with-dir)))
 (defn- new-files-in-old-dirs [h date-expr tz conn-info]
   (let [old-dirs (st/live-directories h date-expr)]
-    (print-expr old-dirs)
     (mapcat #(new-files-in-old-dir h date-expr tz conn-info %) old-dirs)))
 
 (defn- new-files-in-new-dirs [date-expr tz starting-after conn-info]
   (let [new-stuff (list-files-newer-than date-expr tz starting-after conn-info)
-        date-expr (de/make-date-expr date-expr tz)
-        dir-uri-extractor (fn [f] (de/format-expr date-expr (:ts f)))
+        de (de/make-date-expr date-expr tz)
+        dir-uri-extractor (fn [f] (de/format-expr de (:ts f)))
         add-dir-uri (fn [f] (assoc f :dir-uri (dir-uri-extractor f)))]
     (map add-dir-uri new-stuff)))
 
