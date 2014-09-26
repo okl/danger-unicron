@@ -14,11 +14,10 @@
                  [clojurewerkz/quartzite "1.3.0"]
                  [org.slf4j/slf4j-log4j12 "1.7.5"]
                  [aprint "0.1.0"]
-                 ;; [compojure "1.1.6"]
-                 ;; [ring "1.3.0"]
+                 [org.clojure/java.jdbc "0.3.5"]
+                 [mysql/mysql-connector-java "5.1.25"]
+                 [org.xerial/sqlite-jdbc "3.7.2"]
                  ]
-  ;;:plugins [[lein-ring "0.8.11"]]
-  ;;:ring {:handler unicron/handler}
   :resource-paths ["resources"]
   ;; disable logging when running tests
   :profiles {:test {:resource-paths ["test/resources"]}}

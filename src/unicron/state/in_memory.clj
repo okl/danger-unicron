@@ -89,9 +89,6 @@
   (processing-file! [_ started-at date-expr uri uri-time msg]
     (add-event atom-vec (make-file-event started-at date-expr uri
                                          uri-time :processing msg)))
-  (processing-dir! [_ started-at date-expr uri uri-time msg]
-    (add-event atom-vec (make-dir-event started-at date-expr uri
-                                        uri-time :processing msg)))
   (processing-file-in-dir! [_ started-at date-expr uri uri-time msg dir-uri]
     (add-event atom-vec (make-file-in-dir-event started-at date-expr uri
                                                 uri-time :processing msg

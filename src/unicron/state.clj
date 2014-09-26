@@ -96,7 +96,6 @@
   (observed-dir!         [_ observed-at date-expr uri uri-time msg])
   (observed-file-in-dir! [_ observed-at date-expr uri uri-time msg dir-uri])
   (processing-file!        [_ started-at date-expr uri uri-time msg])
-  (processing-dir!         [_ started-at date-expr uri uri-time msg])
   (processing-file-in-dir! [_ started-at date-expr uri uri-time msg dir-uri])
   (completed-file!        [_ completed-at date-expr uri uri-time msg])
   (completed-dir!         [_ completed-at date-expr uri uri-time msg])

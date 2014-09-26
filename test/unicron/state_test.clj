@@ -3,8 +3,9 @@
   (:require [clojure.test :refer :all]
             [unicron.state :refer :all]
             [unicron.state.in-memory :refer [make-in-memory-history]]
-            [unicron.state.sqlite :refer [make-sqlite-history]]
-            [clj-time.core :refer [seconds minutes hours days weeks]]))
+            [unicron.state.jdbc :refer [make-sqlite-history]]
+            [clj-time.core :refer [seconds minutes hours days weeks]]
+            [roxxi.utils.print :refer [print-expr]]))
 
 ;; # State tests
 
@@ -50,6 +51,7 @@
          (let [h# ~h]
            (is (false? (file-has-history? h# de-1)))
            (is (false? (file-has-history? h# de-2)))
+           (is (nil? (latest-file-match h# de-1)))
            (is (nil? (latest-file-match h# de-1)))
            (is (nil? (latest-file-match h# de-2)))
            (observed-file! h# (now-ms) de-1 "s3://foo/bar/2014/" 44000
@@ -106,10 +108,12 @@
            (is (false? (dir-has-history? h# de-2)))
            (is (= 0 (count (live-directories h# de-2)))))))))
 
-(expand-into-state-tests "in-memory-history" (make-in-memory-history))
-;; XXX uncomment this when sqlite-history is implemented
-;; (expand-into-state-tests "sqlite-history" (make-sqlite-history))
-
+(expand-into-state-tests
+ "in-memory-history" (make-in-memory-history))
+(expand-into-state-tests
+ "sqlite-history" (make-sqlite-history :blast-away-history? true
+                                       :db {:subprotocol "sqlite"
+                                            :subname "test/sqlite.db"}))
 
 ;; XX Flesh this out with generative testing :D
 ;; https://github.com/clojure/test.check
