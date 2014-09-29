@@ -44,23 +44,28 @@
 (def de-1 "s3://foo/bar/%Y/")
 (def de-2 "s3://foo/baz/%Y/")
 
+(def mysql-db {:classname "com.mysql.jdbc.Driver"
+               :subprotocol "mysql"
+               :subname "//127.0.0.1:3307/analytics"
+               :user "analytics"
+               :password "analytics"})
+
+(def sqlite-db {:classname "org.sqlite.JDBC"
+                :subprotocol "sqlite"
+                :subname "test/sqlite.db"})
+
 (def history-types
   {:in-memory (fn [] (make-in-memory-history))
-   :sqlite (fn [] (make-sqlite-history :blast-away-history? true
-                                       :db {:subprotocol "sqlite"
-                                            :subname "test/sqlite.db"}))
+   :sqlite (fn [] (make-sqlite-history sqlite-db
+                                       :blast-away-history? true))
    ;; Not sure how to integrate this into a unit testing suite...
    ;; but if you run `vagrant up` in this project, you'll be able
    ;; to uncomment this test and actually run the mysql-history
    ;; tests. (It'll spin up a vagrant instance with mysqld.)
-   (comment
-     :mysql (fn [] (make-mysql-history :blast-away-history? true
-                                       :db {:subprotocol "mysql"
-                                            :subname "//127.0.0.1:3307/analytics"
-                                            :user "analytics"
-                                            :password "analytics"}
-                                       :pooled? true))
-     )
+
+   ;; :mysql (fn [] (make-mysql-history mysql-db
+   ;;                                   :blast-away-history? true
+   ;;                                   :pooled? true))
    })
 
 (def ^:dynamic *hist-maker*)

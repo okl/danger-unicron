@@ -14,16 +14,6 @@
 
 ;; # Cfg
 
-(def- mysql-db {:classname "com.mysql.jdbc.Driver"
-                :subprotocol "mysql"
-                :subname "//127.0.0.1:3307/analytics"
-                :user "analytics"
-                :password "analytics"})
-
-(def- sqlite-db {:classname "org.sqlite.JDBC"
-                 :subprotocol "sqlite"
-                 :subname "db/sqlite.db"})
-
 (def- table :unicron)
 
 (def- field-specs
@@ -49,7 +39,9 @@
 
 ;; # Connection pooling
 
-(defn pool
+(defn- pool
+  "Vanilla configuration straight from the example at
+   http://clojure-doc.org/articles/ecosystem/java_jdbc/connection_pooling.html"
   [spec]
   (let [cpds (doto (ComboPooledDataSource.)
                (.setDriverClass (:classname spec))
@@ -201,10 +193,6 @@
         (log/info "table didn't exist")
         (throw e)))))
 
-(defn blast-away-history! [db]
-  (drop-table-if-exists! db)
-  (create-table-if-not-exists! db))
-
 ;; # The JDBC implementation
 
 (defrecord JdbcHistory [db]
@@ -283,34 +271,21 @@
     (insert! db (make-file-in-dir-event completed-at date-expr uri
                                         uri-time COMPLETED msg dir-uri))))
 
-(defn make-mysql-history [& {:keys [blast-away-history?
-                                    db
-                                    pooled?]
-                             :or   {blast-away-history? false
-                                    db mysql-db
-                                    pooled? true}}]
-  (let [db (if pooled? (pool db) db)]
+;; # Makers
+
+(defn make-mysql-history [db-spec & {:keys [blast-away-history?
+                                            pooled?]
+                                     :or   {blast-away-history? false
+                                            pooled? true}}]
+  (let [db-spec (if pooled? (pool db-spec) db-spec)]
     (when blast-away-history?
-      (drop-table-if-exists! db))
-    (create-table-if-not-exists! db)
-    (->JdbcHistory db)))
+      (drop-table-if-exists! db-spec))
+    (create-table-if-not-exists! db-spec)
+    (->JdbcHistory db-spec)))
 
-(defn make-sqlite-history [& {:keys [blast-away-history?
-                                     db]
-                              :or   {blast-away-history? false
-                                     db sqlite-db}}]
+(defn make-sqlite-history [db-spec & {:keys [blast-away-history?]
+                                      :or   {blast-away-history? false}}]
   (when blast-away-history?
-    (drop-table-if-exists! db))
-  (create-table-if-not-exists! db)
-  (->JdbcHistory db))
-
-;; # Testing
-
-(comment
-  (clojure.tools.namespace.repl/refresh)
-  (blast-away-history! sqlite-db)
-  (make-dir-event h 1234 "asdf" "asdf000" 1230 "foo")
-  (def h (make-sqlite-history))
-  (observed-dir! h 1234 "asdf" "asdf000" 1230 "foo")
-  (latest-dir-match h "asdf")
-  )
+    (drop-table-if-exists! db-spec))
+  (create-table-if-not-exists! db-spec)
+  (->JdbcHistory db-spec))
