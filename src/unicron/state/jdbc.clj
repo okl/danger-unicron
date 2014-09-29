@@ -13,7 +13,7 @@
 ;; # Cfg
 
 (def- mysql-db {:subprotocol "mysql"
-                :subname "//localhost:3306/analytics"
+                :subname "//127.0.0.1:3307/analytics"
                 :user "analytics"
                 :password "analytics"})
 
@@ -26,10 +26,10 @@
 ;; XXX need to enable connection pooling
 (def- field-specs
   [;;[:id :int "PRIMARY KEY AUTO_INCREMENT"]
-   [:event-time :date]
+   [:event-time :bigint]
    [:date-expr "varchar(500)"]
    [:uri "varchar(500)"]
-   [:uri-time :long]
+   [:uri-time :bigint]
    [:state "varchar(20)"]
    [:msg "varchar(500)"]
    [:is-dir :bool]
@@ -40,6 +40,11 @@
 
 (def- column-specs
   (map (fn [[field type]] [(->column-name field) type]) field-specs))
+
+;; pardon my Java-ness
+(def- OBSERVED "observed")
+(def- PROCESSING "processing")
+(def- COMPLETED "completed")
 
 ;; # Helpers
 
@@ -97,17 +102,14 @@
                               limit
                               semicolon))
         q (join " " clauses)
-        q-and-params (vec (cons q filter-vals))]
-    ;; q-and-params
-    ;; (println (format "query is %s" q))
-    ;; (println (format "filter-vals are %s"
-    ;;                 (with-out-str (clojure.pprint/pprint filter-vals))))
-    (j/query db q-and-params :row-fn #(project-map % :key-xform ->record-field))))
+        q-and-params (vec (cons q filter-vals))
+        row-fn #(project-map % :key-xform ->record-field)]
+    (j/query db q-and-params :row-fn row-fn)))
 
 (defn- extract-count [result-set]
   ;; If you select count(1), you get back a result-set that looks like this:
   ;; [{:count(1) 0}]
-  (first (vals (first result-set))))
+  (get (first result-set) (keyword "count(1)")))
 
 ;; ## DDL
 
@@ -119,10 +121,10 @@
                      (list :table-spec "ENGINE=InnoDB"))]
     (j/db-do-commands db (apply j/create-table-ddl args))
     ;;(j/db-do-commands db "CREATE INDEX name_ix ON fruit ( name )")
-    (j/db-do-commands db (format "CREATE INDEX %s_ix ON %s ( %s )"
-                                 table
-                                 table
-                                 (->column-name :date-expr)))))
+    (j/db-do-commands db (list (format "CREATE INDEX %s_ix ON %s ( ? )"
+                                                   (name table)
+                                                   (name table))
+                               (->column-name :date-expr)))))
 
 (defmethod create-table! "sqlite" [db]
   (let [args (concat (list table)
@@ -141,6 +143,15 @@
         (log/info "table already existed")
         (throw e)))))
 
+(defmethod create-table-if-not-exists! "mysql" [db]
+  (try
+    (create-table! db)
+    (catch BatchUpdateException e
+      (if (.contains (.getMessage e)
+                     (format "Table '%s' already exists" (name table)))
+        (log/info "table already existed")
+        (throw e)))))
+
 (defn drop-table! [db]
   (j/db-do-commands db (j/drop-table-ddl table)))
 
@@ -152,6 +163,15 @@
     (catch BatchUpdateException e
       (if (.contains (.getMessage e)
                      (format "no such table: %s" (name table)))
+        (log/info "table didn't exist")
+        (throw e)))))
+
+(defmethod drop-table-if-exists! "mysql" [db]
+  (try
+    (drop-table! db)
+    (catch BatchUpdateException e
+      (if (.contains (.getMessage e)
+                     (format "Unknown table '%s'" (name table)))
         (log/info "table didn't exist")
         (throw e)))))
 
@@ -198,7 +218,7 @@
             [[:date-expr date-expr]
              [:is-dir false]
              [:dir-uri directory-uri]
-             [:state :observed]]))
+             [:state OBSERVED]]))
 
   ;; Write methods
   (expire-old-directories! [h date-expr moment-of-death]
@@ -214,30 +234,35 @@
                         (format "collected by the reaper; moment-of-death was %s" moment-of-death)))))
   (observed-file!        [_ observed-at date-expr uri uri-time msg]
     (insert! db (make-file-event observed-at date-expr uri
-                                 uri-time :observed msg)))
+                                 uri-time OBSERVED msg)))
   (observed-dir!         [_ observed-at date-expr uri uri-time msg]
     (insert! db (make-dir-event observed-at date-expr uri
-                                uri-time :observed msg)))
+                                uri-time OBSERVED msg)))
   (observed-file-in-dir! [_ observed-at date-expr uri uri-time msg dir-uri]
     (insert! db (make-file-in-dir-event observed-at date-expr uri
-                                        uri-time :observed msg dir-uri)))
+                                        uri-time OBSERVED msg dir-uri)))
   (processing-file!        [_ started-at date-expr uri uri-time msg]
     (insert! db (make-file-event started-at date-expr uri
-                                 uri-time :processing msg)))
+                                 uri-time PROCESSING msg)))
   (processing-file-in-dir! [_ started-at date-expr uri uri-time msg dir-uri]
     (insert! db (make-file-in-dir-event started-at date-expr uri
-                                        uri-time :processing msg dir-uri)))
+                                        uri-time PROCESSING msg dir-uri)))
   (completed-file!        [_ completed-at date-expr uri uri-time msg]
     (insert! db (make-file-event completed-at date-expr uri
-                                 uri-time :completed msg)))
+                                 uri-time COMPLETED msg)))
   (completed-dir!         [_ completed-at date-expr uri uri-time msg]
     (insert! db (make-dir-event completed-at date-expr uri
-                                uri-time :completed msg)))
+                                uri-time COMPLETED msg)))
   (completed-file-in-dir! [_ completed-at date-expr uri uri-time msg dir-uri]
     (insert! db (make-file-in-dir-event completed-at date-expr uri
-                                        uri-time :completed msg dir-uri))))
+                                        uri-time COMPLETED msg dir-uri))))
 
-(defn make-mysql-history []
+(defn make-mysql-history [& {:keys [blast-away-history?
+                                    db]
+                             :or   {blast-away-history? false
+                                    db mysql-db}}]
+  (when blast-away-history?
+    (drop-table-if-exists! db))
   (create-table-if-not-exists! mysql-db)
   (->JdbcHistory mysql-db))
 

@@ -3,7 +3,8 @@
   (:require [clojure.test :refer :all]
             [unicron.state :refer :all]
             [unicron.state.in-memory :refer [make-in-memory-history]]
-            [unicron.state.jdbc :refer [make-sqlite-history]]
+            [unicron.state.jdbc :refer [make-sqlite-history
+                                        make-mysql-history]]
             [clj-time.core :refer [seconds minutes hours days weeks]]
             [roxxi.utils.print :refer [print-expr]]))
 
@@ -110,10 +111,23 @@
 
 (expand-into-state-tests
  "in-memory-history" (make-in-memory-history))
+
 (expand-into-state-tests
  "sqlite-history" (make-sqlite-history :blast-away-history? true
                                        :db {:subprotocol "sqlite"
                                             :subname "test/sqlite.db"}))
+
+(comment
+  ;; Not sure how to integrate this into a unit testing suite...
+  ;; but if you run `vagrant up` in this project, you'll be able
+  ;; to uncomment this test and actually run the mysql-history
+  ;; tests. (It'll spin up a vagrant instance with mysqld.)
+  (expand-into-state-tests
+   "mysql-history" (make-mysql-history :blast-away-history? true
+                                       :db {:subprotocol "mysql"
+                                            :subname "//127.0.0.1:3307/analytics"
+                                            :user "analytics"
+                                            :password "analytics"}))
 
 ;; XX Flesh this out with generative testing :D
 ;; https://github.com/clojure/test.check
