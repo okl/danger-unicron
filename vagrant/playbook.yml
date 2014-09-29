@@ -1,0 +1,71 @@
+---
+- hosts: all
+  sudo: true
+  tasks:
+    - name: install epel so I can get needed libraries
+      yum: name=http://dl.fedoraproject.org/pub/epel/6/x86_64/epel-release-6-8.noarch.rpm
+           state=present
+
+    - name: install generic libraries
+      yum: name=git,man,python-pip,strace
+           state=present
+
+    - name: install mysql libraries
+      yum: name=mysql-devel
+           state=present
+
+    - name: install mysql server for database backend
+      yum: name=mysql-server
+           state=present
+
+    - name: install python-devel for mysql-python later
+      yum: name=python-devel
+           state=present
+
+    - name: start up mysql
+      service: name=mysqld
+               state=started
+               enabled=yes
+
+    - name: install python mysqldb module for mysql setup
+      pip: name=mysql-python
+           state=present
+
+    - name: stop iptables for external access to ports
+      service: name=iptables
+               state=stopped
+               enabled=no
+
+    - name: create okluser user
+      user: name=okluser
+            groups=vagrant
+            append=true
+
+    - name: create /okl directory for the deploy to use
+      file: name=/okl
+            owner=vagrant
+            state=directory
+
+- hosts: all
+  sudo: false
+  tasks:
+
+    - name: create analytics database
+      mysql_db: name=analytics
+
+    - name: create analytics mysql user
+      mysql_user: user=analytics
+                  host=%
+                  state=present
+                  password=analytics
+                  priv=*.*:all
+
+    - name: create ssh key
+      command: ssh-keygen -t rsa -f /home/vagrant/.ssh/id_rsa -N '' creates=~/.ssh/id_rsa
+
+    - name: obtain the ssh key
+      shell: cat /home/vagrant/.ssh/id_rsa.pub
+      register: ssh_key
+
+    - name: put the ssh key in authorized_keys
+      authorized_key: user=vagrant key="{{ ssh_key.stdout }}" manage_dir=no
