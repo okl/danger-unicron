@@ -44,90 +44,94 @@
 (def de-1 "s3://foo/bar/%Y/")
 (def de-2 "s3://foo/baz/%Y/")
 
-
-(defmacro expand-into-state-tests [h-type h]
-  (let [test-name (symbol (str h-type "-test"))]
-    `(deftest ~test-name
-       (testing "observing files"
-         (let [h# ~h]
-           (is (false? (file-has-history? h# de-1)))
-           (is (false? (file-has-history? h# de-2)))
-           (is (nil? (latest-file-match h# de-1)))
-           (is (nil? (latest-file-match h# de-1)))
-           (is (nil? (latest-file-match h# de-2)))
-           (observed-file! h# (now-ms) de-1 "s3://foo/bar/2014/" 44000
-                           "saw one")
-
-           (is (true? (file-has-history? h# de-1)))
-           (is (false? (file-has-history? h# de-2)))
-           (is (= "s3://foo/bar/2014/" (:uri (latest-file-match h# de-1))))
-           (is (nil? (latest-file-match h# de-2)))
-
-           (observed-file! h# (now-ms) de-1 "s3://foo/bar/2015/" 44001
-                           "saw another one")
-
-           (is (= "s3://foo/bar/2015/" (:uri (latest-file-match h# de-1))))))
-
-       (testing "observing directories"
-         (let [h# ~h]
-           (is (false? (dir-has-history? h# de-1)))
-           (observed-dir! h# 1000 de-1 "s3://foo/bar/2014/" 44000
-                          "saw one; continuing to monitor for 24 hours from now")
-           (is (true? (dir-has-history? h# de-1)))
-           (is (= 0 (count (matches-in-directory h# de-1 "s3://foo/bar/2014/"))))
-           (observed-file-in-dir! h# 1000 de-1 "s3://foo/bar/2014/a.txt" 44000
-                                  "found a file in the dir" "s3://foo/bar/2014/")
-           (is (= 1 (count (matches-in-directory h# de-1 "s3://foo/bar/2014/"))))
-           (observed-file-in-dir! h# 1002 de-1 "s3://foo/bar/2014/b.txt" 44001
-                                  "found a file in the dir" "s3://foo/bar/2014/")
-           (is (= 2 (count (matches-in-directory h# de-1 "s3://foo/bar/2014/"))))
-           (observed-file-in-dir! h# 1003 de-1 "s3://foo/bar/2014/c.txt" 44002
-                                  "found a file in the dir" "s3://foo/bar/2014/")
-           (is (= 3 (count (matches-in-directory h# de-1 "s3://foo/bar/2014/"))))
-           (is (true? (dir-has-history? h# de-1)))
-           (is (= "s3://foo/bar/2014/" (:uri (latest-dir-match h# de-1))))
-           (is (= 1 (count (live-directories h# de-1))))
-
-           (observed-dir! h# 2000 de-1 "s3://foo/bar/2015/" 45000
-                          "saw another, monitoring for a while")
-           (is (true? (dir-has-history? h# de-1)))
-           (is (= 2 (count (live-directories h# de-1))))
-           (is (= "s3://foo/bar/2015/" (:uri (latest-dir-match h# de-1))))
-
-           (expire-old-directories! h# de-1 1999)
-           (is (= 1 (count (live-directories h# de-1))))
-           (is (= 3 (count (matches-in-directory h# de-1 "s3://foo/bar/2014/"))))
-           (is (= 0 (count (matches-in-directory h# de-1 "s3://foo/bar/2015/"))))
-           (is (= "s3://foo/bar/2015/" (:uri (latest-dir-match h# de-1))))
-
-           (expire-old-directories! h# de-1 2001)
-           (is (= 0 (count (live-directories h# de-1))))
-           (is (= 3 (count (matches-in-directory h# de-1 "s3://foo/bar/2014/"))))
-           (is (= 0 (count (matches-in-directory h# de-1 "s3://foo/bar/2015/"))))
-           (is (= "s3://foo/bar/2015/" (:uri (latest-dir-match h# de-1))))
-
-           (is (false? (dir-has-history? h# de-2)))
-           (is (= 0 (count (live-directories h# de-2)))))))))
-
-(expand-into-state-tests
- "in-memory-history" (make-in-memory-history))
-
-(expand-into-state-tests
- "sqlite-history" (make-sqlite-history :blast-away-history? true
+(def history-types
+  {:in-memory (fn [] (make-in-memory-history))
+   :sqlite (fn [] (make-sqlite-history :blast-away-history? true
                                        :db {:subprotocol "sqlite"
                                             :subname "test/sqlite.db"}))
-
-(comment
-  ;; Not sure how to integrate this into a unit testing suite...
-  ;; but if you run `vagrant up` in this project, you'll be able
-  ;; to uncomment this test and actually run the mysql-history
-  ;; tests. (It'll spin up a vagrant instance with mysqld.)
-  (expand-into-state-tests
-   "mysql-history" (make-mysql-history :blast-away-history? true
+   ;; Not sure how to integrate this into a unit testing suite...
+   ;; but if you run `vagrant up` in this project, you'll be able
+   ;; to uncomment this test and actually run the mysql-history
+   ;; tests. (It'll spin up a vagrant instance with mysqld.)
+   (comment
+     :mysql (fn [] (make-mysql-history :blast-away-history? true
                                        :db {:subprotocol "mysql"
                                             :subname "//127.0.0.1:3307/analytics"
                                             :user "analytics"
-                                            :password "analytics"}))
+                                            :password "analytics"}
+                                       :pooled? true))
+     )
+   })
+
+(def ^:dynamic *hist-maker*)
+(defmacro with-all-histories [& exprs]
+  `(doseq [[name# maker#] ~history-types]
+     (binding [*hist-maker* maker#]
+       (testing (str "for " name#)
+         ~@exprs))))
+
+(deftest history-tests
+  (testing "observing files"
+    (with-all-histories
+      (let [h (*hist-maker*)]
+        (is (false? (file-has-history? h de-1)))
+        (is (false? (file-has-history? h de-2)))
+        (is (nil? (latest-file-match h de-1)))
+        (is (nil? (latest-file-match h de-1)))
+        (is (nil? (latest-file-match h de-2)))
+        (observed-file! h (now-ms) de-1 "s3://foo/bar/2014/" 44000
+                        "saw one")
+
+        (is (true? (file-has-history? h de-1)))
+        (is (false? (file-has-history? h de-2)))
+        (is (= "s3://foo/bar/2014/" (:uri (latest-file-match h de-1))))
+        (is (nil? (latest-file-match h de-2)))
+
+        (observed-file! h (now-ms) de-1 "s3://foo/bar/2015/" 44001
+                        "saw another one")
+
+        (is (= "s3://foo/bar/2015/" (:uri (latest-file-match h de-1))))))
+    (testing "observing directories"
+      (with-all-histories
+        (let [h (*hist-maker*)]
+          (is (false? (dir-has-history? h de-1)))
+          (observed-dir! h 1000 de-1 "s3://foo/bar/2014/" 44000
+                         "saw one; continuing to monitor for 24 hours from now")
+          (is (true? (dir-has-history? h de-1)))
+          (is (= 0 (count (matches-in-directory h de-1 "s3://foo/bar/2014/"))))
+          (observed-file-in-dir! h 1000 de-1 "s3://foo/bar/2014/a.txt" 44000
+                                 "found a file in the dir" "s3://foo/bar/2014/")
+          (is (= 1 (count (matches-in-directory h de-1 "s3://foo/bar/2014/"))))
+          (observed-file-in-dir! h 1002 de-1 "s3://foo/bar/2014/b.txt" 44001
+                                 "found a file in the dir" "s3://foo/bar/2014/")
+          (is (= 2 (count (matches-in-directory h de-1 "s3://foo/bar/2014/"))))
+          (observed-file-in-dir! h 1003 de-1 "s3://foo/bar/2014/c.txt" 44002
+                                 "found a file in the dir" "s3://foo/bar/2014/")
+          (is (= 3 (count (matches-in-directory h de-1 "s3://foo/bar/2014/"))))
+          (is (true? (dir-has-history? h de-1)))
+          (is (= "s3://foo/bar/2014/" (:uri (latest-dir-match h de-1))))
+          (is (= 1 (count (live-directories h de-1))))
+
+          (observed-dir! h 2000 de-1 "s3://foo/bar/2015/" 45000
+                         "saw another, monitoring for a while")
+          (is (true? (dir-has-history? h de-1)))
+          (is (= 2 (count (live-directories h de-1))))
+          (is (= "s3://foo/bar/2015/" (:uri (latest-dir-match h de-1))))
+
+          (expire-old-directories! h de-1 1999)
+          (is (= 1 (count (live-directories h de-1))))
+          (is (= 3 (count (matches-in-directory h de-1 "s3://foo/bar/2014/"))))
+          (is (= 0 (count (matches-in-directory h de-1 "s3://foo/bar/2015/"))))
+          (is (= "s3://foo/bar/2015/" (:uri (latest-dir-match h de-1))))
+
+          (expire-old-directories! h de-1 2001)
+          (is (= 0 (count (live-directories h de-1))))
+          (is (= 3 (count (matches-in-directory h de-1 "s3://foo/bar/2014/"))))
+          (is (= 0 (count (matches-in-directory h de-1 "s3://foo/bar/2015/"))))
+          (is (= "s3://foo/bar/2015/" (:uri (latest-dir-match h de-1))))
+
+          (is (false? (dir-has-history? h de-2)))
+          (is (= 0 (count (live-directories h de-2)))))))))
 
 ;; XX Flesh this out with generative testing :D
 ;; https://github.com/clojure/test.check

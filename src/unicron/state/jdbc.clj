@@ -1,32 +1,33 @@
 (ns unicron.state.jdbc
   "jdbc-based implementations of History (Mysql, Sqlite)"
   {:author "Matt Halverson", :date "Thu Sep 25 13:54:46 PDT 2014"}
-  (:require [unicron.state :refer :all])
+  (:require [unicron.state :refer :all]
+            [unicron.utils :refer [log-and-throw]])
   (:require [roxxi.utils.print :refer [print-expr]]
             [roxxi.utils.common :refer [def-]]
             [roxxi.utils.collections :refer [project-map]]
             [clojure.tools.logging :as log]
             [clojure.string :refer [join]])
   (:require [clojure.java.jdbc :as j])
-  (:import [java.sql BatchUpdateException]))
+  (:import [java.sql BatchUpdateException]
+           [com.mchange.v2.c3p0 ComboPooledDataSource]))
 
 ;; # Cfg
 
-(def- mysql-db {:subprotocol "mysql"
+(def- mysql-db {:classname "com.mysql.jdbc.Driver"
+                :subprotocol "mysql"
                 :subname "//127.0.0.1:3307/analytics"
                 :user "analytics"
                 :password "analytics"})
 
-(def- sqlite-db {:subprotocol "sqlite"
+(def- sqlite-db {:classname "org.sqlite.JDBC"
+                 :subprotocol "sqlite"
                  :subname "db/sqlite.db"})
 
 (def- table :unicron)
 
-;; XXX consider an index on the table
-;; XXX need to enable connection pooling
 (def- field-specs
-  [;;[:id :int "PRIMARY KEY AUTO_INCREMENT"]
-   [:event-time :bigint]
+  [[:event-time :bigint]
    [:date-expr "varchar(500)"]
    [:uri "varchar(500)"]
    [:uri-time :bigint]
@@ -45,6 +46,21 @@
 (def- OBSERVED "observed")
 (def- PROCESSING "processing")
 (def- COMPLETED "completed")
+
+;; # Connection pooling
+
+(defn pool
+  [spec]
+  (let [cpds (doto (ComboPooledDataSource.)
+               (.setDriverClass (:classname spec))
+               (.setJdbcUrl (str "jdbc:" (:subprotocol spec) ":" (:subname spec)))
+               (.setUser (:user spec))
+               (.setPassword (:password spec))
+               ;; expire excess connections after 30 minutes of inactivity:
+               (.setMaxIdleTimeExcessConnections (* 30 60))
+               ;; expire connections after 3 hours of inactivity:
+               (.setMaxIdleTime (* 3 60 60)))]
+    {:datasource cpds}))
 
 ;; # Helpers
 
@@ -113,28 +129,41 @@
 
 ;; ## DDL
 
-(defmulti create-table! :subprotocol)
+(defn- db-type [possibly-pooled-db-spec]
+  (let [pooled? (isa? (class (:datasource possibly-pooled-db-spec))
+                      ComboPooledDataSource)
+        jdbc-url (and pooled?
+                      (.getJdbcUrl (:datasource possibly-pooled-db-spec)))
+        type (cond
+              (or (= "mysql" (:subprotocol possibly-pooled-db-spec))
+                  (and pooled? (.contains jdbc-url "mysql")))
+              :mysql
+              (= "sqlite" (:subprotocol possibly-pooled-db-spec))
+              :sqlite
+              :else
+              (log-and-throw
+               (format "Don't recognize type of db-spec %s"
+                       (dissoc possibly-pooled-db-spec :password))))]
+    type))
 
-(defmethod create-table! "mysql" [db]
+(defmulti create-table! db-type)
+(defmethod create-table! :mysql [db]
   (let [args (concat (list table)
                      column-specs
                      (list :table-spec "ENGINE=InnoDB"))]
     (j/db-do-commands db (apply j/create-table-ddl args))
-    ;;(j/db-do-commands db "CREATE INDEX name_ix ON fruit ( name )")
     (j/db-do-commands db (list (format "CREATE INDEX %s_ix ON %s ( ? )"
                                                    (name table)
                                                    (name table))
                                (->column-name :date-expr)))))
-
-(defmethod create-table! "sqlite" [db]
+(defmethod create-table! :sqlite [db]
   (let [args (concat (list table)
                      column-specs
                      (list :table-spec ""))]
     (j/db-do-commands db (apply j/create-table-ddl args))))
 
-(defmulti create-table-if-not-exists! :subprotocol)
-
-(defmethod create-table-if-not-exists! "sqlite" [db]
+(defmulti create-table-if-not-exists! db-type)
+(defmethod create-table-if-not-exists! :sqlite [db]
   (try
     (create-table! db)
     (catch BatchUpdateException e
@@ -142,8 +171,7 @@
                      (format "table %s already exists" (name table)))
         (log/info "table already existed")
         (throw e)))))
-
-(defmethod create-table-if-not-exists! "mysql" [db]
+(defmethod create-table-if-not-exists! :mysql [db]
   (try
     (create-table! db)
     (catch BatchUpdateException e
@@ -155,9 +183,8 @@
 (defn drop-table! [db]
   (j/db-do-commands db (j/drop-table-ddl table)))
 
-(defmulti drop-table-if-exists! :subprotocol)
-
-(defmethod drop-table-if-exists! "sqlite" [db]
+(defmulti drop-table-if-exists! db-type)
+(defmethod drop-table-if-exists! :sqlite [db]
   (try
     (drop-table! db)
     (catch BatchUpdateException e
@@ -165,8 +192,7 @@
                      (format "no such table: %s" (name table)))
         (log/info "table didn't exist")
         (throw e)))))
-
-(defmethod drop-table-if-exists! "mysql" [db]
+(defmethod drop-table-if-exists! :mysql [db]
   (try
     (drop-table! db)
     (catch BatchUpdateException e
@@ -258,13 +284,16 @@
                                         uri-time COMPLETED msg dir-uri))))
 
 (defn make-mysql-history [& {:keys [blast-away-history?
-                                    db]
+                                    db
+                                    pooled?]
                              :or   {blast-away-history? false
-                                    db mysql-db}}]
-  (when blast-away-history?
-    (drop-table-if-exists! db))
-  (create-table-if-not-exists! mysql-db)
-  (->JdbcHistory mysql-db))
+                                    db mysql-db
+                                    pooled? true}}]
+  (let [db (if pooled? (pool db) db)]
+    (when blast-away-history?
+      (drop-table-if-exists! db))
+    (create-table-if-not-exists! db)
+    (->JdbcHistory db)))
 
 (defn make-sqlite-history [& {:keys [blast-away-history?
                                      db]

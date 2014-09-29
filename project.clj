@@ -11,12 +11,15 @@
                  [com.onekingslane.danger/date-expr "0.3.0"]
                  [dwd "0.1.0-SNAPSHOT"]
                  [clj-time "0.7.0"]
-                 [clojurewerkz/quartzite "1.3.0"]
                  [org.slf4j/slf4j-log4j12 "1.7.5"]
                  [aprint "0.1.0"]
+                 ;; Scheduling
+                 [clojurewerkz/quartzite "1.3.0"]
+                 ;; History
                  [org.clojure/java.jdbc "0.3.5"]
                  [mysql/mysql-connector-java "5.1.25"]
                  [org.xerial/sqlite-jdbc "3.7.2"]
+                 [com.mchange/c3p0 "0.9.2.1"] ;; for connection pooling
                  ]
   :resource-paths ["resources"]
   ;; disable logging when running tests
