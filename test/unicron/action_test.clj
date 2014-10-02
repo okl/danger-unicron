@@ -6,30 +6,28 @@
             [roxxi.utils.print :refer [print-expr]]
             [roxxi.utils.common :refer [def-]]
             [unicron.feed :as f]
+            [unicron.state.in-memory :as im]
             [unicron.core :refer :all])
   (:import [java.io BufferedReader StringReader]))
 
 ;; # Helpers
 
 (defn- fresh-action []
-  (let [app (create-instance)
-        h (:history app)
-        f (f/interp-feed
-           '(feed
-             (id "foobar")
-             (conn {:access-key "1234"
-                    :secret-key "ABCD"})
-             (date-expr "s3://bucket/%Y/%m/%d/dev/" "America/Los_Angeles")
-             (starting-after "s3://bucket/2014/08/05/dev/")
-             (action (clj
-                      (fn [uri ts]
-                        (println (format "I am action. uri is %s, ts is %s" uri ts)))))
-             (poll-expr (cron "/20 * * * * ? *"))
-             (is-dir (dir-ttl (minutes 10)))
-             (filter (regex ".+/file/.+"))
-             )
-           {:history h})
-        a (:action f)
+  (let [feeds (list '(feed
+                      (id "foobar")
+                      (conn {:access-key "1234"
+                             :secret-key "ABCD"})
+                      (date-expr "s3://bucket/%Y/%m/%d/dev/" "America/Los_Angeles")
+                      (starting-after "s3://bucket/2014/08/05/dev/")
+                      (action (clj
+                               (fn [uri ts]
+                                 (println (format "I am action. uri is %s, ts is %s" uri ts)))))
+                      (poll-expr (cron "/20 * * * * ? *"))
+                      (is-dir (dir-ttl (minutes 10)))
+                      (filter (regex ".+/file/.+"))))
+        app (create-instance :history (im/make-in-memory-history)
+                             :feeds-sexps feeds)
+        a (:action (first (:parsed-feeds app)))
         thunk (fn [] (a {}))]
     thunk))
 

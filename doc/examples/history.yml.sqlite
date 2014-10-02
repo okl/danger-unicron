@@ -1,0 +1,2 @@
+history_impl: sqlite
+ - path: /var/sqlite.db

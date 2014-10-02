@@ -10,6 +10,7 @@
                  [com.onekingslane.danger/date-expr "0.3.0"]
                  [com.onekingslane.danger/data-watch-dog "0.1.0"]
                  [clj-time "0.7.0"]
+                 [clj-yaml "0.4.0"]
                  [org.slf4j/slf4j-log4j12 "1.7.5"]
                  ;; Scheduling
                  [clojurewerkz/quartzite "1.3.0"]
@@ -19,7 +20,8 @@
                  [org.xerial/sqlite-jdbc "3.7.2"]
                  [com.mchange/c3p0 "0.9.2.1"] ;; for connection pooling
                  ]
-  :resource-paths ["resources"]
+  :resource-paths ["resources"
+                   "conf"]
   ;; disable logging when running tests
   :profiles {:test {:resource-paths ["test/resources"]}}
   )

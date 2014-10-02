@@ -9,3 +9,5 @@ pom.xml.asc
 /.nrepl-port
 test/sqlite.db
 .vagrant
+conf/*.yml
+conf/*.clj
