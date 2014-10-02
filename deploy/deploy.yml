@@ -1,0 +1,87 @@
+# deploy.yml: deploy unicron
+---
+ - hosts: local
+   vars_files:
+     - vars.yml
+   tasks:
+     - name: create temp directory
+       command: mktemp -dt "{{ project }}.XXXXXX"
+       register: tempdir
+
+     - name: clone project
+       git: repo={{ repo }}
+            dest={{ tempdir.stdout }}/{{ project }}
+            version={{ _version }}
+
+     - name: running unit tests
+       shell: $HOME/.lein/lein test
+       args:
+         chdir: "{{ tempdir.stdout }}/{{ project }}"
+
+     - name: build uberjar
+       shell: $HOME/.lein/lein uberjar
+       args:
+         chdir: "{{ tempdir.stdout }}/{{ project }}"
+
+     - name: tokenize
+       command: chdir="/opt/danger-tokenmgr"
+                /usr/local/bin/lein run filter
+                    {{ project }}
+                    {{ envt }}
+                    {{ tempdir.stdout }}/{{ project }}
+                    --token "ENVT={{ envt }}"
+
+     - name: package - mkdir
+       command: mkdir package
+       args:
+         chdir: "{{ tempdir.stdout }}"
+
+     - name: package - uberjar
+       shell:
+         cp {{ project }}/target/uberjar/*-standalone.jar package
+       args:
+         chdir: "{{ tempdir.stdout }}"
+
+     - name: package - build-time configuration
+       command: cp -a {{ project }}/conf package
+       args:
+         chdir: "{{ tempdir.stdout }}"
+
+     - name: package - tarball
+       shell: tar -cz . > ../{{ project }}.tar.gz
+       args:
+         chdir: "{{ tempdir.stdout }}/package"
+
+     - name: hack - make tarball globally visable
+       file: src={{ tempdir.stdout }}/{{ project }}.tar.gz
+             dest=/tmp/{{ envt }}-{{ project }}.tar.gz
+             state=link
+
+ - hosts: "{{envt}}-app"
+   user: oklrelease
+   vars_files:
+     - vars.yml
+   tasks:
+     - name: remove existing
+       command: rm -rf {{ _destdir }}/
+
+     - name: create root
+       command: mkdir -p {{ _destdir }}
+
+     - name: extract package
+       unarchive: src=/tmp/{{ envt }}-{{ project }}.tar.gz
+                  dest={{ _destdir }}
+
+     - name: configuring - creating root config dir
+       command: mkdir -p /okl/etc/unicron
+
+ - hosts: local
+   vars_files:
+     - vars.yml
+   tasks:
+     - name: hack - delete global link
+       file: dest=/tmp/{{ envt }}-{{ project }}.tar.gz
+             state=absent
+
+     - name: delete temp directory
+       file: dest={{ tempdir.stdout }} state=absent

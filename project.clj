@@ -22,6 +22,6 @@
                  ]
   :resource-paths ["resources"
                    "conf"]
-  ;; disable logging when running tests
-  :profiles {:test {:resource-paths ["test/resources"]}}
-  )
+  :target-path "target/%s"
+  :profiles {;; disable logging when running tests
+             :test {:resource-paths ["test/resources"]}})

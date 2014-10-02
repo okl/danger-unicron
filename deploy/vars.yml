@@ -1,0 +1,6 @@
+project: "unicron"
+repo: "git@github.com:okl/danger-unicron.git"
+
+# user variables with default values
+_version: "{{version | default(\"master\")}}"
+_destdir: "{{destdir | default(\"/okl/unicron\")}}"
