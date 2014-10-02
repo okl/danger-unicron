@@ -2,7 +2,6 @@
   "Watch for new files, take action when they appear"
   {:author "Matt Halverson", :date "Fri Aug 22 09:54:28 PDT 2014"}
   (:require [clojure.tools.logging :as log]
-            [clojure.core.match :refer [match]]
             [clj-time.core :as t]
             [clojure.java.shell :refer [sh]]
             [diesel.core :refer [definterpreter]]
