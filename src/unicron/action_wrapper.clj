@@ -4,6 +4,7 @@
   (:require [roxxi.utils.common :refer [def-]]
             [roxxi.utils.print :refer [print-expr]]
             [clojure.tools.logging :as log]
+            [clojure.stacktrace :refer [print-stack-trace]]
             [date-expr.core :as de]
             [dwd.core :as dwd]
             [dwd.check-result :as cr]
@@ -108,8 +109,7 @@
           (st/completed-file! h (st/now) date-expr uri ts "error"))
         (let [ret (alert/email "Unicron Feed error"
                                (str "Caught exception running action:\n"
-                                    (with-out-str
-                                      (clojure.stacktrace/print-stack-trace e))))]
+                                    (with-out-str (print-stack-trace e))))]
           ;; ret looks like this:
           ;;   {:code 0, :error :SUCCESS, :message "message sent"}
           (when (not= 0 (:code ret))
