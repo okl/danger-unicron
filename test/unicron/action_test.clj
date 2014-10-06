@@ -12,24 +12,29 @@
 
 ;; # Helpers
 
-(defn- fresh-action []
-  (let [feeds (list '(feed
-                      (id "foobar")
-                      (conn {:access-key "1234"
+(defn fresh-action [action-form]
+  (let [feeds (list (list
+                     'feed
+                     '(id "foobar")
+                     '(conn {:access-key "1234"
                              :secret-key "ABCD"})
-                      (date-expr "s3://bucket/%Y/%m/%d/dev/" "America/Los_Angeles")
-                      (starting-after "s3://bucket/2014/08/05/dev/")
-                      (action (clj
-                               (fn [uri ts]
-                                 (println (format "I am action. uri is %s, ts is %s" uri ts)))))
-                      (poll-expr (cron "/20 * * * * ? *"))
-                      (is-dir (dir-ttl (minutes 10)))
-                      (filter (regex ".+/file/.+"))))
+                     '(date-expr "s3://bucket/%Y/%m/%d/dev/" "America/Los_Angeles")
+                     '(starting-after "s3://bucket/2014/08/05/dev/")
+                     action-form
+                     '(poll-expr (cron "/20 * * * * ? *"))
+                     '(is-dir (dir-ttl (minutes 10)))
+                     '(filter (regex ".+/file/.+"))))
         app (create-instance :history (im/make-in-memory-history)
                              :feeds-sexps feeds)
         a (:action (first (:parsed-feeds app)))
         thunk (fn [] (a {}))]
     thunk))
+
+(defn- fresh-print-action []
+  (fresh-action
+   '(action (clj
+             (fn [uri ts]
+               (println (format "I am action. uri is %s, ts is %s" uri ts)))))))
 
 (defmacro line-count [a]
   `(let [s# (with-out-str (~a))]
@@ -37,12 +42,12 @@
                  br# (BufferedReader. sr#)]
        (count (line-seq br#)))))
 
-(defn- my-lfmp [event-seq]
+(defn my-lfmp [event-seq]
   (fn [_ _ prefix _]
     (filter #(.startsWith (:uri %) prefix)
             event-seq)))
 
-(defn- my-lfnt [event-seq]
+(defn my-lfnt [event-seq]
   (fn [_ _ newer-than-this _]
     (let [prefix-len (count "s3://bucket/2014/08/07")
           prefix #(subs % 0 prefix-len)]
@@ -58,7 +63,7 @@
 
 ;; # Tests!
 
-(def- event-seq
+(def event-seq
   [{:uri "s3://bucket/2014/08/06/dev/file/01.21.41", :ts 1407308400}
    {:uri "s3://bucket/2014/08/06/dev/file/01.21.47", :ts 1407308400}
    {:uri "s3://bucket/2014/08/06/dev/file/02.31.06", :ts 1407308400}
@@ -71,12 +76,12 @@
 (deftest action-wrapper-test
   (testing "If there are no files, the action doesn't get run"
     (let [e []
-          a (fresh-action)]
+          a (fresh-print-action)]
       (with-remote-uris e
         (is (= 0 (line-count a))))))
   (testing "While no new files are showing up, the action doesn't get run"
     (let [e event-seq
-          a (fresh-action)]
+          a (fresh-print-action)]
       (with-remote-uris e
         (comment "Note that due to the regex-filter it's 6, not 7")
         (is (= 6 (line-count a)))
@@ -84,7 +89,7 @@
         (is (= 0 (line-count a)))
         (is (= 0 (line-count a))))))
   (testing "When new files get detected, the action is run once for each file"
-    (let [a (fresh-action)
+    (let [a (fresh-print-action)
           e3 (take 3 event-seq)
           e4 (take 4 event-seq)
           e5 (take 5 event-seq)]
@@ -98,7 +103,7 @@
         (is (= 1 (line-count a)))
         (is (= 0 (line-count a))))))
   (testing "If a file is deleted on the remote, it doesn't break unicron logic"
-    (let [a (fresh-action)
+    (let [a (fresh-print-action)
           e12 (take 2 event-seq)
           e13 (list (nth event-seq 0) (nth event-seq 2))
           e134567 (concat (take 1 event-seq)

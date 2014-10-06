@@ -9,7 +9,8 @@
             [dwd.check-result :as cr]
             [unicron.utils :refer [log-and-throw]]
             [unicron.connection :refer [interp-conn]]
-            [unicron.state :as st]))
+            [unicron.state :as st]
+            [unicron.alert :as alert]))
 
 ;; # Helper code
 
@@ -104,7 +105,15 @@
         (log/error (.getMessage e))
         (if dir-uri
           (st/completed-file-in-dir! h (st/now) date-expr uri ts "error" dir-uri)
-          (st/completed-file! h (st/now) date-expr uri ts "error")))
+          (st/completed-file! h (st/now) date-expr uri ts "error"))
+        (let [ret (alert/email "Unicron Feed error"
+                               (str "Caught exception running action:\n"
+                                    (with-out-str
+                                      (clojure.stacktrace/print-stack-trace e))))]
+          ;; ret looks like this:
+          ;;   {:code 0, :error :SUCCESS, :message "message sent"}
+          (when (not= 0 (:code ret))
+            (log/error "Oh noes! Sending the alert email failed! D:"))))
       (finally
         (log/infof "Completed new file for %s: file was %s" date-expr uri)))))
 

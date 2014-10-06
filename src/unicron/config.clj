@@ -65,3 +65,8 @@
       "in_memory" (im-history cfg)
       "sqlite" (sqlite-history cfg)
       :else (throw (RuntimeException. (str "Unrecognized history_impl: " impl))))))
+
+;; # Alerting
+
+(defn email-to []
+  (get (read-master-cfg) "email_to"))

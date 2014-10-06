@@ -227,9 +227,15 @@
   ;; for discussion of an undesirable 1-minute wait that can occur before
   ;; your standalone Clojure program exits if you do not use shutdown-agents.
   (fn [uri ts]
-    (sh "/bin/bash" "-c" cmd uri ts
-        ;; If with-file-stream option :in file-stream
-        )))
+    (let [ret (sh "/bin/bash" "-c" (str cmd) (str uri) (str ts))]
+      ;; ret looks like this:
+      ;;   {:exit 0, :out "stdout\n", :err "stderr"}
+      (when (not= 0 (:exit ret))
+        (throw
+         (RuntimeException.
+          (str "sh command exited with nonzero exit code: "
+               "exit code was " (:exit ret) "; stderr was "
+               (:err ret) "; stdout was " (:out ret) ".")))))))
 
 (defmethod interp-feed :root-sh [[token cmd] env]
   (log-and-throw "root-sh has not been implemented"))

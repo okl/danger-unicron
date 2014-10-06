@@ -19,6 +19,8 @@
                  [mysql/mysql-connector-java "5.1.25"]
                  [org.xerial/sqlite-jdbc "3.7.2"]
                  [com.mchange/c3p0 "0.9.2.1"] ;; for connection pooling
+                 ;; Alerting
+                 [com.draines/postal "1.11.1"]
                  ]
   :resource-paths ["resources"
                    "conf"]
