@@ -121,7 +121,7 @@
           (with-email-stubbed c
             (with-remote-uris (take 1 event-seq)
               (is (= 0 @c))
-              (a)
+              (with-out-str (a))
               (is (= 0 @c))
-              (a)
+              (with-out-str (a))
               (is (= 0 @c)))))))))
