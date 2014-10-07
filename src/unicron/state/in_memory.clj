@@ -54,9 +54,6 @@
           uris-with-ends (into #{} (map :uri dirs-with-ends))
           live-uris (clojure.set/difference uris-with-starts uris-with-ends)
           live-dirs (filter #(contains? live-uris (:uri %)) dirs-with-starts)]
-      ;; (print-expr uris-with-starts)
-      ;; (print-expr uris-with-ends)
-      ;; (print-expr live-dirs)
       live-dirs))
   (matches-in-directory [_ date-expr directory-uri]
     (-> @atom-vec
