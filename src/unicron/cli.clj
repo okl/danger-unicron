@@ -36,7 +36,7 @@
   (println msg)
   (System/exit status))
 
-l(defn -main [& args]
+(defn -main [& args]
   (let [{:keys [options arguments errors summary]} (parse-opts args cli-options)]
     ;; Handle help and error conditions
     (cond

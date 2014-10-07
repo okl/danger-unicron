@@ -29,6 +29,7 @@
   ;; :main unicron.cli
   :repositories [["danger"
                   {:url "s3p://okl-danger-wagon/releases/"}]]
+  :jvm-opts ["-Djna.nosys=true"]
   :resource-paths ["resources"
                    "conf"]
   :target-path "target/%s"
