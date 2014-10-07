@@ -27,6 +27,8 @@
                  ]
   :main unicron.core
   ;; :main unicron.cli
+  :repositories [["danger"
+                  {:url "s3p://okl-danger-wagon/releases/"}]]
   :resource-paths ["resources"
                    "conf"]
   :target-path "target/%s"
