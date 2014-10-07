@@ -1,7 +1,6 @@
 #!/bin/bash
 
-#APPHOME=$(readlink -f $(dirname $(readlink -f "$0"))/..)
-APPHOME="/Users/mhalverson/Code/okl/danger-unicron"
+APPHOME=$(dirname "$0")/..
 source "$APPHOME/bin/include/common.sh"
 
 ACTION=$1; shift
