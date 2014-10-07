@@ -194,6 +194,9 @@
       (format "Don't know how to convert poll-expr %s to a cron-entry"
               poll-expr)))))
 
+(defn ->jobs [feeds]
+  (flatten (map ->job feeds)))
+
 (defn schedule-jobs [jobs]
   (doseq [j jobs]
     (when-let [pre-existing (qs/get-job (:job-key j))]
@@ -230,4 +233,4 @@
 
 (defn blast-and-load-feeds! "A parsed-feed is a map" [parsed-feeds]
   (clear-scheduler!)
-  (schedule-jobs (flatten (map ->job parsed-feeds))))
+  (schedule-jobs (->jobs parsed-feeds)))

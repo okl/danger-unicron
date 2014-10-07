@@ -38,7 +38,7 @@
       (do
         (log/warn "Feeds-cfg is empty string... using default feeds cfg!")
         (default-feeds-cfg))
-      (read-string s))))
+      (eval (read-string s)))))
 
 ;; # History
 

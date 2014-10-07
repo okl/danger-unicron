@@ -12,6 +12,9 @@
                  [clj-time "0.7.0"]
                  [clj-yaml "0.4.0"]
                  [org.slf4j/slf4j-log4j12 "1.7.5"]
+                 [org.clojure/tools.cli "0.3.1"]
+                 ;; Daemonization
+                 [org.apache.commons/commons-daemon "1.0.9"]
                  ;; Scheduling
                  [clojurewerkz/quartzite "1.3.0"]
                  ;; History
@@ -22,8 +25,11 @@
                  ;; Alerting
                  [com.draines/postal "1.11.1"]
                  ]
+  :main unicron.core
+  ;; :main unicron.cli
   :resource-paths ["resources"
                    "conf"]
   :target-path "target/%s"
-  :profiles {;; disable logging when running tests
-             :test {:resource-paths ["test/resources"]}})
+  :profiles {:test {;; disable logging when running tests
+                    :resource-paths ["test/resources"]}
+             :uberjar {:aot :all}})

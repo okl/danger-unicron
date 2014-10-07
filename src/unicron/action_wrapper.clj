@@ -47,6 +47,7 @@
                                        ~tz
                                        ~newer-than-this))
         check-result (dwd/exec-interp-namespaced form {})]
+    (print-expr check-result)
     (get-path*ts-pairs check-result date-expr tz)))
 
 (defn- new-files-in-old-dir [h date-expr tz conn-info dir-observed-event]

@@ -1,0 +1,31 @@
+#!/bin/bash
+
+#APPHOME=$(readlink -f $(dirname $(readlink -f "$0"))/..)
+APPHOME="/Users/mhalverson/Code/okl/danger-unicron"
+source "$APPHOME/bin/include/common.sh"
+
+ACTION=$1; shift
+CONFIG_PATH="$APPHOME/conf/unicron.yml"
+
+TMP=$(mktemp -dt derpymail.XXXXXXX)
+BACK_HOME=$PWD
+at_exit () {
+    debug "exiting"
+    cd $BACK_HOME
+    rm -rf $TMP
+}
+trap at_exit EXIT
+
+# figure out if we're running an uberjar or using lein run
+find_unicron () {
+    uberjar=$(echo $APPHOME/unicron-*-standalone.jar)
+    project=$APPHOME/project.clj
+    if [ -e "$project" ]; then
+        UNICRON="lein run"
+    else
+        UNICRON="java -Dfile.encoding=UTF-8 -jar $uberjar"
+    fi
+}
+
+find_unicron
+echo "$UNICRON $ACTION -c $CONFIG_PATH"
