@@ -62,6 +62,10 @@
    vars_files:
      - vars.yml
    tasks:
+     - name: stopping unicron
+       command: "{{ _destdir }}/bin/unicron stop"
+       ignore_errors: yes
+
      - name: remove existing
        command: rm -rf {{ _destdir }}/
 
@@ -74,6 +78,9 @@
 
      - name: configuring - creating root config dir
        command: mkdir -p /okl/etc/unicron
+
+     - name: starting unicron
+       command: "{{ _destdir }}/bin/unicron start"
 
  - hosts: local
    vars_files:
