@@ -231,6 +231,15 @@
       ;; ret looks like this:
       ;;   {:exit 0, :out "stdout\n", :err "stderr"}
       (when (not= 0 (:exit ret))
+        ;; Why throw here? It's not a functional technique and it doesn't seem
+        ;; to fit. It should be OK if a shell command exists with a non-zero
+        ;; error code.
+        ;;
+        ;; What about using a function of Map -> Map where it can inspect
+        ;; :error and conditionally execute code. Then you can compose easily:
+        ;;
+        ;; (send-email-on-error (sh ...))
+        ;; (send-flowdock-on-error (send-email-on-error (sh ...)))
         (throw
          (RuntimeException.
           (str "sh command exited with nonzero exit code: "
