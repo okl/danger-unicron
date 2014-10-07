@@ -52,11 +52,14 @@
 ;; # Daemon stuff
 
 (defn -init [this ^DaemonContext context]
-  ;; (.getArguments context)
-  (init nil))
+  ;; (init (.getArguments context))
+  (.getArguments context)
+  (println "invoked -init!")
+  (comment (init nil)))
 
 (defn -start [this]
-  (future (start (create-instance))))
+  (println "invoked -start!")
+  (comment (future (start (create-instance)))))
 
 (defn -stop [this]
   (stop nil))
@@ -72,5 +75,6 @@
 ;;     (start app)))
 
 (defn -main [& args]
+  (println "invoked -main!")
   (init args)
-  (start))
+  (future (start)))

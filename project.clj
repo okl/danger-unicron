@@ -8,7 +8,7 @@
                  [com.onekingslane.danger/clojure-common-utils "0.0.24"]
                  [com.onekingslane.danger/diesel "1.1.0"]
                  [com.onekingslane.danger/date-expr "0.3.0"]
-                 [com.onekingslane.danger/data-watch-dog "0.1.1"]
+                 [com.onekingslane.danger/data-watch-dog "0.1.3"]
                  [clj-time "0.7.0"]
                  [clj-yaml "0.4.0"]
                  [org.slf4j/slf4j-log4j12 "1.7.5"]
